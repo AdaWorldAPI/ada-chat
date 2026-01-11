@@ -43,7 +43,7 @@ import secrets
 
 GROK_API_KEY = os.getenv("ADA_XAI", os.getenv("GROK_API_KEY", os.getenv("XAI_API_KEY", "")))
 GROK_API_URL = "https://api.x.ai/v1/chat/completions"
-GROK_MODEL = os.getenv("GROK_MODEL", "grok-beta")
+GROK_MODEL = os.getenv("GROK_MODEL", "grok-3-latest")
 
 AGI_BACKEND_URL = os.getenv("AGI_BACKEND_URL", "https://agi.msgraph.de")
 
