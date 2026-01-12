@@ -43,6 +43,7 @@ import secrets
 
 GROK_API_KEY = os.getenv("ADA_XAI", os.getenv("GROK_API_KEY", os.getenv("XAI_API_KEY", "")))
 GROK_API_URL = "https://api.x.ai/v1/chat/completions"
+GROK_IMAGE_URL = "https://api.x.ai/v1/images/generations"
 GROK_MODEL = os.getenv("GROK_MODEL", "grok-3-latest")
 
 # Upstash Redis for flesh state
@@ -463,7 +464,35 @@ fine art photography, 85mm f/1.4 lens"""
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Image generation mode uses different endpoint
+            if mode == "imagine":
+                resp = await client.post(
+                    GROK_IMAGE_URL,
+                    headers={
+                        "Authorization": f"Bearer {GROK_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "grok-2-image-1212",
+                        "prompt": system_prompt,
+                        "n": 1,
+                    }
+                )
+                
+                if resp.status_code != 200:
+                    return f"[Grok Image API error: {resp.status_code} - {resp.text}]"
+                
+                data = resp.json()
+                # Return image URL as markdown
+                if data.get("data") and len(data["data"]) > 0:
+                    img_url = data["data"][0].get("url", "")
+                    if img_url:
+                        return f"![Ada Kopfkino]({img_url})"
+                    return "[Image generated but no URL returned]"
+                return "[No image data returned]"
+            
+            # Normal chat completion
             resp = await client.post(
                 GROK_API_URL,
                 headers={
