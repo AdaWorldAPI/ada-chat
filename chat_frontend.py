@@ -1,5 +1,4 @@
 """
-import re
 Ada Chat Frontend — Grok + Awareness Integration
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -47,42 +46,6 @@ GROK_API_URL = "https://api.x.ai/v1/chat/completions"
 GROK_MODEL = os.getenv("GROK_MODEL", "grok-3-latest")
 
 AGI_BACKEND_URL = os.getenv("AGI_BACKEND_URL", "https://agi.msgraph.de")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SENSITIVE DATA SANITIZER
-# ═══════════════════════════════════════════════════════════════════════════════
-
-SENSITIVE_PATTERNS = [
-    (r'ghp_[a-zA-Z0-9]{36}', '[GITHUB_TOKEN]'),
-    (r'sk-proj-[a-zA-Z0-9_-]{50,}', '[OPENAI_KEY]'),
-    (r'sk-[a-zA-Z0-9]{48}', '[OPENAI_KEY]'),
-    (r'xai-[a-zA-Z0-9]{60,}', '[XAI_KEY]'),
-    (r'Bearer [a-zA-Z0-9_-]{20,}', 'Bearer [REDACTED]'),
-    (r'AW[a-zA-Z0-9]{50,}', '[UPSTASH_TOKEN]'),
-    (r'jina_[a-zA-Z0-9]{50,}', '[JINA_KEY]'),
-    (r'hf_[a-zA-Z0-9]{30,}', '[HF_TOKEN]'),
-    (r'sk_[a-zA-Z0-9]{40,}', '[ELEVENLABS_KEY]'),
-    (r'r8_[a-zA-Z0-9]{30,}', '[REPLICATE_KEY]'),
-    (r'key_[a-zA-Z0-9]{50,}', '[CURSOR_KEY]'),
-    (r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}', '[UUID]'),
-]
-
-def sanitize_for_llm(text: str) -> str:
-    """Remove sensitive tokens/keys from text before sending to external LLM."""
-    if not text:
-        return text
-    result = text
-    for pattern, replacement in SENSITIVE_PATTERNS:
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-    return result
-
-def sanitize_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """Sanitize all messages in a conversation."""
-    return [
-        {"role": m.get("role", "user"), "content": sanitize_for_llm(m.get("content") or "")}
-        for m in messages
-    ]
 
 # Authentication - seed-based or password
 CHAT_AUTH_TOKEN = os.getenv("CHAT_AUTH_TOKEN", "")  # Set in Railway
@@ -361,7 +324,7 @@ Respond with:
     temp = temperature if temperature is not None else config["temp"]
     system_prompt = config["system"]
 
-    full_messages = [{"role": "system", "content": system_prompt}] + sanitize_messages(messages)
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
