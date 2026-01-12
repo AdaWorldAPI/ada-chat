@@ -80,7 +80,7 @@ def sanitize_for_llm(text: str) -> str:
 def sanitize_messages(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Sanitize all messages in a conversation."""
     return [
-        {"role": m["role"], "content": sanitize_for_llm(m.get("content", ""))}
+        {"role": m.get("role", "user"), "content": sanitize_for_llm(m.get("content") or "")}
         for m in messages
     ]
 
