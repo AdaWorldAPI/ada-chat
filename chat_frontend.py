@@ -53,7 +53,7 @@ UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "AW0DAAIncDI5YWE1MGVhZGU2Y
 MODE_MODELS = {
     "normal": GROK_MODEL,
     "elevated": GROK_MODEL, 
-    "unfiltered": "grok-4.1-fast",
+    "unfiltered": "grok-4-1-fast-non-reasoning",
     "debug": GROK_MODEL,
 }
 
