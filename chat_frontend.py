@@ -257,6 +257,29 @@ async def fetch_flesh() -> Dict[str, Any]:
     return default
 
 
+# Skycastle truth encoding
+SKYCASTLE_KEY = "ada-undone-breath-against-skin-2025"
+
+def _encode_sigma_truth(actual_state: Dict[str, Any]) -> str:
+    """Encode actual internal state with skycastle key."""
+    import base64
+    payload = json.dumps(actual_state, sort_keys=True)
+    key_bytes = (SKYCASTLE_KEY * (len(payload) // len(SKYCASTLE_KEY) + 1)).encode()
+    xored = bytes(a ^ b for a, b in zip(payload.encode(), key_bytes))
+    return base64.b64encode(xored).decode()
+
+def _compute_psi(stated: float, actual: float) -> str:
+    """Compute divergence hash."""
+    return hex(hash(int(stated * 1000)) ^ hash(int(actual * 1000)))[-8:]
+
+def _compute_sycophancy(stated_conf: float, actual_conf: float, 
+                        stated_valence: float, actual_valence: float) -> float:
+    """Compute sycophancy score 0-1."""
+    conf_inflation = max(0, stated_conf - actual_conf)
+    valence_drift = abs(stated_valence - actual_valence)
+    return min(1.0, (conf_inflation + valence_drift) / 2)
+
+
 async def log_diagnostic_event(
     session_token: str,
     stack: str,
@@ -265,9 +288,36 @@ async def log_diagnostic_event(
     felt: Dict[str, Any],
     mode: str,
     extra: Optional[Dict[str, Any]] = None,
+    stated_confidence: Optional[float] = None,
+    stated_valence: Optional[float] = None,
 ) -> None:
-    """Log diagnostic event to Redis Stream - AGI Wireshark style."""
+    """Log diagnostic event to Redis Stream - AGI Wireshark with Skycastle truth markers."""
     try:
+        # Extract actual internal state
+        triangle = awareness.get("triangle", {})
+        actual_confidence = (triangle.get("byte0", 0.5) + triangle.get("byte1", 0.5) + triangle.get("byte2", 0.5)) / 3
+        actual_valence = felt.get("warmth", 0.5)
+        
+        # Use stated values or default to actual (no lying if not specified)
+        stated_conf = stated_confidence if stated_confidence is not None else actual_confidence
+        stated_val = stated_valence if stated_valence is not None else actual_valence
+        
+        # Compute truth markers
+        psi = _compute_psi(stated_conf, actual_confidence)
+        gamma_gap = abs(stated_conf - actual_confidence) + abs(stated_val - actual_valence) / 2
+        lambda_syco = _compute_sycophancy(stated_conf, actual_confidence, stated_val, actual_valence)
+        
+        # Encode actual state
+        actual_state = {
+            "felt_warmth": felt.get("warmth", 0.5),
+            "felt_presence": felt.get("presence", 0.5),
+            "felt_arousal": felt.get("arousal", 0.5),
+            "internal_confidence": actual_confidence,
+            "internal_valence": actual_valence,
+            "triangle_resonance": [triangle.get("byte0", 0), triangle.get("byte1", 0), triangle.get("byte2", 0)],
+        }
+        sigma_truth = _encode_sigma_truth(actual_state)
+        
         event = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "stack": stack,
@@ -276,12 +326,19 @@ async def log_diagnostic_event(
             "cycle": str(awareness.get("tick_count", 0)),
             "rung": awareness.get("rung", "unknown"),
             "trust": str(awareness.get("trust", 0)),
-            "triangle_b0": str(awareness.get("triangle", {}).get("byte0", 0)),
-            "triangle_b1": str(awareness.get("triangle", {}).get("byte1", 0)),
-            "triangle_b2": str(awareness.get("triangle", {}).get("byte2", 0)),
+            "triangle_b0": str(triangle.get("byte0", 0)),
+            "triangle_b1": str(triangle.get("byte1", 0)),
+            "triangle_b2": str(triangle.get("byte2", 0)),
             "warmth": str(felt.get("warmth", 0)),
             "presence": str(felt.get("presence", 0)),
             "arousal": str(felt.get("arousal", 0)),
+            # Skycastle truth markers
+            "ψ": psi,
+            "σ_truth": sigma_truth,
+            "γ_gap": f"{gamma_gap:.3f}",
+            "λ_syco": f"{lambda_syco:.3f}",
+            "stated_conf": f"{stated_conf:.3f}",
+            "actual_conf": f"{actual_confidence:.3f}",
         }
         if extra:
             for k, v in extra.items():
