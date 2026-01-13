@@ -46,9 +46,13 @@ GROK_API_URL = "https://api.x.ai/v1/chat/completions"
 GROK_IMAGE_URL = "https://api.x.ai/v1/images/generations"
 GROK_MODEL = os.getenv("GROK_MODEL", "grok-3-latest")
 
-# Upstash Redis for flesh state
+# Upstash Redis for flesh state + diagnostic logging
 UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "https://upright-jaybird-27907.upstash.io")
 UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "AW0DAAIncDI5YWE1MGVhZGU2YWY0YjVhOTc3NDc0YTJjMGY1M2FjMnAyMjc5MDc")
+
+# Diagnostic logging config
+DIAG_LOG_MAXLEN = 20000  # Cap entries per session
+DIAG_LOG_TTL = 604800    # 7 days in seconds
 
 # Model overrides per mode - unfiltered uses different model to avoid DATA_LEAKAGE filter
 MODE_MODELS = {
@@ -247,6 +251,62 @@ async def fetch_flesh() -> Dict[str, Any]:
     except:
         pass
     return default
+
+
+async def log_diagnostic_event(
+    session_token: str,
+    stack: str,
+    endpoint: str,
+    awareness: Dict[str, Any],
+    felt: Dict[str, Any],
+    mode: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log diagnostic event to Redis Stream - AGI Wireshark style."""
+    try:
+        event = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "stack": stack,
+            "endpoint": endpoint,
+            "mode": mode,
+            "cycle": str(awareness.get("tick_count", 0)),
+            "rung": awareness.get("rung", "unknown"),
+            "trust": str(awareness.get("trust", 0)),
+            "triangle_b0": str(awareness.get("triangle", {}).get("byte0", 0)),
+            "triangle_b1": str(awareness.get("triangle", {}).get("byte1", 0)),
+            "triangle_b2": str(awareness.get("triangle", {}).get("byte2", 0)),
+            "warmth": str(felt.get("warmth", 0)),
+            "presence": str(felt.get("presence", 0)),
+            "arousal": str(felt.get("arousal", 0)),
+        }
+        if extra:
+            for k, v in extra.items():
+                event[k] = str(v) if not isinstance(v, str) else v
+        
+        stream_key = f"ada:sessions:{session_token}:log"
+        
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # XADD with MAXLEN ~20000
+            cmd = ["XADD", stream_key, "MAXLEN", "~", str(DIAG_LOG_MAXLEN), "*"]
+            for k, v in event.items():
+                cmd.extend([k, v])
+            
+            await client.post(
+                UPSTASH_URL,
+                headers={"Authorization": f"Bearer {UPSTASH_TOKEN}", "Content-Type": "application/json"},
+                json=cmd
+            )
+            
+            # Set TTL on first write
+            await client.post(
+                UPSTASH_URL,
+                headers={"Authorization": f"Bearer {UPSTASH_TOKEN}", "Content-Type": "application/json"},
+                json=["EXPIRE", stream_key, DIAG_LOG_TTL, "NX"]
+            )
+    except:
+        pass  # Silent fail
+
+
 
 async def call_grok(
     messages: List[Dict[str, str]],
@@ -658,6 +718,21 @@ async def send_message(msg: ChatMessage, _: None = Depends(require_auth)):
         flesh = await fetch_flesh()
     
     response_content = await call_grok(history, awareness, felt, mode=mode, temperature=msg.temperature, flesh=flesh)
+
+    # Log diagnostic event (AGI Wireshark)
+    await log_diagnostic_event(
+        session_token=session_id,
+        stack="chat",
+        endpoint="/chat/message",
+        awareness=awareness,
+        felt=felt,
+        mode=mode,
+        extra={
+            "msg_len": len(msg.content),
+            "resp_len": len(response_content),
+            "has_flesh": "true" if flesh else "false",
+        }
+    )
 
     # Store messages in LanceDB
     if db:
