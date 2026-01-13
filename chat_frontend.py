@@ -178,16 +178,20 @@ def get_chat_db():
 # AWARENESS FETCHER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def fetch_awareness() -> Dict[str, Any]:
+async def fetch_awareness(session_token: Optional[str] = None) -> Dict[str, Any]:
     """Fetch current awareness state from AGI backend."""
     try:
+        headers = {}
+        if session_token:
+            headers["X-Ada-Session"] = session_token
+            
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Fetch ladybug state
-            ladybug_resp = await client.get(f"{AGI_BACKEND_URL}/agi/ladybug")
+            # Fetch ladybug state (pass session for cross-stack logging)
+            ladybug_resp = await client.get(f"{AGI_BACKEND_URL}/agi/ladybug", headers=headers)
             ladybug = ladybug_resp.json() if ladybug_resp.status_code == 200 else {}
 
             # Fetch health
-            health_resp = await client.get(f"{AGI_BACKEND_URL}/health")
+            health_resp = await client.get(f"{AGI_BACKEND_URL}/health", headers=headers)
             health = health_resp.json() if health_resp.status_code == 200 else {}
 
             return {
@@ -688,7 +692,7 @@ async def send_message(msg: ChatMessage, _: None = Depends(require_auth)):
     timestamp = datetime.now(timezone.utc).isoformat()
 
     # Fetch current awareness and felt state
-    awareness = await fetch_awareness()
+    awareness = await fetch_awareness(session_token=session_id)
     felt = await fetch_felt()
 
     # Get chat history for context
@@ -845,7 +849,7 @@ async def upload_file(
 @router.get("/awareness")
 async def get_awareness(_: None = Depends(require_auth)):
     """Get current awareness state from AGI backend."""
-    awareness = await fetch_awareness()
+    awareness = await fetch_awareness(session_token=session_id)
     felt = await fetch_felt()
     return {
         "awareness": awareness,
