@@ -37,6 +37,15 @@ from pydantic import BaseModel
 import hashlib
 import secrets
 
+# LadybugDB Integration
+try:
+    from ladybug_db.awareness.engine import AwarenessEngine
+    LADYBUG_ENGINE = AwarenessEngine()
+    HAS_LADYBUG = True
+except ImportError:
+    LADYBUG_ENGINE = None
+    HAS_LADYBUG = False
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -179,7 +188,22 @@ def get_chat_db():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def fetch_awareness(session_token: Optional[str] = None) -> Dict[str, Any]:
-    """Fetch current awareness state from AGI backend."""
+    """Fetch current awareness state from AGI backend or local LadybugDB."""
+    # Try local LadybugDB first
+    if HAS_LADYBUG and LADYBUG_ENGINE:
+        state = LADYBUG_ENGINE.get_current_state()
+        return {
+            "ok": True,
+            "ladybug": state,
+            "health": {"status": "ok", "engine": "local"},
+            "rung": state.get("rung", "unknown"),
+            "trust": 0.5, # Placeholder
+            "triangle": state.get("triangle", {}),
+            "tick_count": state.get("tick_count", 0),
+            "quadrant": state.get("quadrant", "[9999:9999]"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
     try:
         headers = {}
         if session_token:
@@ -769,6 +793,17 @@ async def send_message(msg: ChatMessage, _: None = Depends(require_auth)):
 
     # Add user message to history
     history.append({"role": "user", "content": msg.content})
+
+    # Update local awareness if active
+    if HAS_LADYBUG and LADYBUG_ENGINE:
+        perception = LADYBUG_ENGINE.perceive(msg.content)
+        # Update awareness variable with fresh state
+        awareness_state = perception["awareness"]
+        awareness.update({
+            "tick_count": awareness_state.get("tick_count", 0),
+            "triangle": awareness_state.get("triangle", {}),
+            "quadrant": awareness_state.get("quadrant", ""),
+        })
 
     # Call Grok with mode and temperature
     mode = msg.mode or "normal"
