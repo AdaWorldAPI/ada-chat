@@ -9,10 +9,13 @@ Environment variables needed:
     - CHAT_AUTH_TOKEN: Access token for authentication
     - JINA_API_KEY: For embeddings (optional)
     - AGI_BACKEND_URL: URL of AGI backend (default: http://agi.railway.internal:8080)
+    - LADYBUG_DATA_PATH: Path for LadybugDB data (default: /data/ladybugdb)
+    - LADYBUG_ENABLE_MEMGRAPH: Enable Memgraph integration (default: false)
 
 Endpoints:
     /chat/*     - Original chat endpoints (v1)
     /chat/v2/*  - Enhanced endpoints with grammar + DTO + situationmap
+    /ladybug/*  - LadybugDB system endpoints
 
 Usage:
     uvicorn chat_app:app --host 0.0.0.0 --port 8080
@@ -36,10 +39,19 @@ except ImportError as e:
     chat_router_v2 = None
     HAS_V2 = False
 
+# LadybugDB router (optional - graceful fallback)
+try:
+    from ladybugdb.api import router as ladybug_router
+    HAS_LADYBUG = True
+except ImportError as e:
+    print(f"Warning: ladybugdb not available: {e}", file=sys.stderr)
+    ladybug_router = None
+    HAS_LADYBUG = False
+
 app = FastAPI(
     title="Ada Chat",
-    description="Chat with Ada via Grok API with real-time awareness + DTO/Grammar integration",
-    version="2.0.1",
+    description="Chat with Ada via Grok API with real-time awareness + DTO/Grammar integration + LadybugDB",
+    version="2.1.0",
 )
 
 # CORS
@@ -55,6 +67,8 @@ app.add_middleware(
 app.include_router(chat_router)
 if HAS_V2 and chat_router_v2:
     app.include_router(chat_router_v2)
+if HAS_LADYBUG and ladybug_router:
+    app.include_router(ladybug_router)
 
 
 @app.get("/")
@@ -69,11 +83,13 @@ async def health():
     return {
         "status": "healthy",
         "service": "ada-chat",
-        "version": "2.0.1",
+        "version": "2.1.0",
         "v2_enabled": HAS_V2,
+        "ladybugdb_enabled": HAS_LADYBUG,
         "grok_configured": bool(os.getenv("ADA_XAI")),
         "jina_configured": bool(os.getenv("JINA_API_KEY")),
         "agi_backend": os.getenv("AGI_BACKEND_URL", "http://agi.railway.internal:8080"),
+        "ladybug_data_path": os.getenv("LADYBUG_DATA_PATH", "/data/ladybugdb"),
     }
 
 
